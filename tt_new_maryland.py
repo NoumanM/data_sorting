@@ -2,11 +2,14 @@ import csv
 import os
 from pathlib import Path
 from datetime import date
-from spanish_utils import Spanish_Utils
 import pandas as pd
 import math
 import uuid
 from string import capwords
+from googletrans import Translator
+from deep_translator import GoogleTranslator
+
+translator = Translator()
 
 BaseDir = Path(__file__).resolve().parent
 
@@ -37,19 +40,55 @@ def assign_county(response, county):
         county_list.append(resp)
     return county_list
 
+spanish_translations = {}
+
+def add_spanish_translation(text):
+    for i in range(3):
+        try:
+            if text.strip() in spanish_translations.keys():
+                return spanish_translations[text.strip()]
+            if '-' not in text and '/' not in text:
+                translated = GoogleTranslator(source='en', target='es').translate(text.strip())
+                new_text = translated
+            else:
+                all_chunks = text.split('-')
+                new_text = ''
+                for chunk in all_chunks:
+                    translated = GoogleTranslator(source='en', target='es').translate(chunk.strip())
+                    new_text += f"{translated} - "
+
+            if new_text.endswith('- '):
+                new_text = new_text[:-2].strip()
+            print(f"'{text}': '{new_text}'")
+            spanish_translations[text.strip()] = f"{text} / {new_text}"
+            return f"{text} / {new_text}"
+        except Exception as ex:
+            print(f"'{text}': '{ex}'")
+
+    return 'NULL'
+
+provider_type_dict = {
+        'PrimaryCareProvider': 'Primary Care Provider / Proveedores de atención primaria',
+        'SpecialistProvider': 'Specialist Provider / Proveedores especialistas',
+        'AncillaryProvider': 'Ancillary Provider / Proveedores auxiliares',
+        'Pharmacy': 'Pharmacy / Farmacia',
+        'VisionProvider': 'Vision Provider / Proveedor de visión'
+    }
 
 def assign_new_speciality(response):
     new_speciality = []
     for resp in response:
         if not isinstance(resp['Specialty'], str):
             continue
-        if isinstance(resp['Specialty'], str) and resp['Specialty'].strip().replace(';',
-                                                                                    ' - ') in Spanish_Utils.add_spanish.keys():
-            resp['Specialty'] = Spanish_Utils.add_spanish[resp['Specialty'].strip().replace(';', ' - ')]
+        if isinstance(resp['Specialty'], str):
+            resp['Specialty'] = add_spanish_translation(resp['Specialty'].strip().replace(';', ' - '))
         if isinstance(resp['ProviderType'], str) and resp[
-            'ProviderType'].strip() in Spanish_Utils.provider_type_dict.keys():
-            resp['ProviderType'] = Spanish_Utils.provider_type_dict[resp['ProviderType'].strip()]
-        resp['City'] = capwords(resp['City'])
+            'ProviderType'].strip() in provider_type_dict.keys():
+            resp['ProviderType'] = provider_type_dict[resp['ProviderType'].strip()]
+        try:
+            resp['City'] = capwords(resp['City'])
+        except:
+            print('here')
         resp['Ethnicity'] = 'Unknown' if not isinstance(resp['Ethnicity'], str) else resp['Ethnicity']
         resp['Race'] = 'Unknown' if not isinstance(resp['Race'], str) else resp['Race']
         if (str(resp['Group Name']) == str(resp['Last Name'])) and (
@@ -67,7 +106,7 @@ if not os.path.exists(f"{BaseDir}/sorted_csv"):
     os.mkdir(f"{BaseDir}/sorted_csv")
 
 for file in files:
-    county = file.split('/')[-1].replace('Test.csv', '')
+    county = file.split('/')[-1].replace('Test.csv', '').replace('.csv', '')
     csv_file = pd.read_csv(os.path.join(speciality_last_name, file))
 
     # Correctly convert DataFrame to list of dictionaries
@@ -100,7 +139,7 @@ def replace_nan_with_null(response):
 
 
 files = os.listdir(rf"{BaseDir}/sorted_csv")
-output_file = f'maryland-{date.today()}.csv'
+output_file = f'MFC-MD Combined Data.csv'
 provider_types = ['Primary Care Provider / Proveedores de atención primaria',
                   'Specialist Provider / Proveedores especialistas',
                   'Ancillary Provider / Proveedores auxiliares',
